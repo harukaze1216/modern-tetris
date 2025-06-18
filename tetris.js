@@ -19,6 +19,11 @@ class ModernTetris {
         this.isPaused = false;
         this.isGameOver = false;
         
+        // Animation and effect systems
+        this.particles = [];
+        this.blockAnimations = [];
+        this.effectTypes = ['explode', 'melt', 'bounce', 'sparkle', 'implode'];
+        
         this.colors = [
             null,
             '#FF6B6B', // I-piece - 赤
@@ -125,6 +130,8 @@ class ModernTetris {
     }
     
     merge() {
+        const pieceBlocks = [];
+        
         this.currentPiece.matrix.forEach((row, y) => {
             row.forEach((value, x) => {
                 if (value !== 0) {
@@ -132,10 +139,14 @@ class ModernTetris {
                     const boardX = x + this.currentPiece.pos.x;
                     if (boardY >= 0) {
                         this.board[boardY][boardX] = value;
+                        pieceBlocks.push({ x: boardX, y: boardY, color: value });
                     }
                 }
             });
         });
+        
+        // Trigger random effect for each block
+        this.triggerRandomBlockEffect(pieceBlocks);
     }
     
     rotate(matrix) {
@@ -214,6 +225,10 @@ class ModernTetris {
         
         // Draw next piece
         this.drawNextPiece();
+        
+        // Draw particles and animations
+        this.drawParticles();
+        this.drawBlockAnimations();
     }
     
     drawGrid() {
@@ -312,6 +327,10 @@ class ModernTetris {
                 this.dropCounter = 0;
             }
             
+            // Update animations and particles
+            this.updateParticles(deltaTime);
+            this.updateBlockAnimations(deltaTime);
+            
             this.draw();
             this.updateDisplay();
         }
@@ -338,6 +357,8 @@ class ModernTetris {
         this.dropInterval = 1000;
         this.isPaused = false;
         this.isGameOver = false;
+        this.particles = [];
+        this.blockAnimations = [];
         this.generateNewPiece();
         this.generateNewPiece();
         document.getElementById('pauseBtn').textContent = 'Pause';
@@ -374,6 +395,239 @@ class ModernTetris {
         
         document.getElementById('restartBtn').addEventListener('click', () => {
             this.restart();
+        });
+    }
+    
+    // ============ ANIMATION EFFECTS SYSTEM ============
+    
+    triggerRandomBlockEffect(blocks) {
+        blocks.forEach(block => {
+            const effectType = this.effectTypes[Math.floor(Math.random() * this.effectTypes.length)];
+            this.createBlockEffect(block, effectType);
+        });
+    }
+    
+    createBlockEffect(block, effectType) {
+        const centerX = (block.x + 0.5) * this.BLOCK_SIZE;
+        const centerY = (block.y + 0.5) * this.BLOCK_SIZE;
+        const color = this.colors[block.color];
+        
+        switch (effectType) {
+            case 'explode':
+                this.createExplodeEffect(centerX, centerY, color);
+                break;
+            case 'melt':
+                this.createMeltEffect(block.x, block.y, color);
+                break;
+            case 'bounce':
+                this.createBounceEffect(block.x, block.y, color);
+                break;
+            case 'sparkle':
+                this.createSparkleEffect(centerX, centerY, color);
+                break;
+            case 'implode':
+                this.createImplodeEffect(centerX, centerY, color);
+                break;
+        }
+    }
+    
+    createExplodeEffect(centerX, centerY, color) {
+        for (let i = 0; i < 12; i++) {
+            const angle = (Math.PI * 2 / 12) * i;
+            const speed = 2 + Math.random() * 3;
+            this.particles.push({
+                x: centerX,
+                y: centerY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 3 + Math.random() * 4,
+                color: color,
+                life: 1.0,
+                decay: 0.02,
+                type: 'explode'
+            });
+        }
+    }
+    
+    createMeltEffect(blockX, blockY, color) {
+        this.blockAnimations.push({
+            x: blockX,
+            y: blockY,
+            color: color,
+            type: 'melt',
+            progress: 0,
+            duration: 800,
+            originalHeight: this.BLOCK_SIZE
+        });
+    }
+    
+    createBounceEffect(blockX, blockY, color) {
+        this.blockAnimations.push({
+            x: blockX,
+            y: blockY,
+            color: color,
+            type: 'bounce',
+            progress: 0,
+            duration: 600,
+            bounceHeight: 0
+        });
+    }
+    
+    createSparkleEffect(centerX, centerY, color) {
+        for (let i = 0; i < 8; i++) {
+            this.particles.push({
+                x: centerX + (Math.random() - 0.5) * this.BLOCK_SIZE,
+                y: centerY + (Math.random() - 0.5) * this.BLOCK_SIZE,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                size: 2 + Math.random() * 3,
+                color: '#FFFFFF',
+                life: 1.0,
+                decay: 0.015,
+                type: 'sparkle'
+            });
+        }
+    }
+    
+    createImplodeEffect(centerX, centerY, color) {
+        for (let i = 0; i < 10; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 30 + Math.random() * 20;
+            this.particles.push({
+                x: centerX + Math.cos(angle) * distance,
+                y: centerY + Math.sin(angle) * distance,
+                targetX: centerX,
+                targetY: centerY,
+                size: 2 + Math.random() * 3,
+                color: color,
+                life: 1.0,
+                decay: 0.025,
+                type: 'implode'
+            });
+        }
+    }
+    
+    updateParticles(deltaTime) {
+        this.particles = this.particles.filter(particle => {
+            particle.life -= particle.decay;
+            
+            if (particle.type === 'implode') {
+                // Move towards target
+                const dx = particle.targetX - particle.x;
+                const dy = particle.targetY - particle.y;
+                particle.x += dx * 0.1;
+                particle.y += dy * 0.1;
+            } else {
+                // Normal movement
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                
+                if (particle.type === 'explode') {
+                    particle.vy += 0.1; // Gravity
+                }
+            }
+            
+            return particle.life > 0;
+        });
+    }
+    
+    updateBlockAnimations(deltaTime) {
+        this.blockAnimations = this.blockAnimations.filter(anim => {
+            anim.progress += deltaTime;
+            
+            if (anim.type === 'bounce') {
+                const t = anim.progress / anim.duration;
+                if (t <= 1) {
+                    anim.bounceHeight = Math.sin(t * Math.PI * 3) * 10 * (1 - t);
+                }
+            }
+            
+            return anim.progress < anim.duration;
+        });
+    }
+    
+    drawParticles() {
+        this.particles.forEach(particle => {
+            this.ctx.save();
+            this.ctx.globalAlpha = particle.life;
+            
+            if (particle.type === 'sparkle') {
+                // Draw sparkle as a star
+                this.ctx.fillStyle = particle.color;
+                this.ctx.beginPath();
+                this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Add glow effect
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = particle.color;
+                this.ctx.fill();
+            } else {
+                // Draw regular particle
+                this.ctx.fillStyle = particle.color;
+                this.ctx.beginPath();
+                this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+            
+            this.ctx.restore();
+        });
+    }
+    
+    drawBlockAnimations() {
+        this.blockAnimations.forEach(anim => {
+            const posX = anim.x * this.BLOCK_SIZE;
+            const posY = anim.y * this.BLOCK_SIZE;
+            
+            this.ctx.save();
+            
+            if (anim.type === 'melt') {
+                const t = anim.progress / anim.duration;
+                const meltProgress = Math.min(t * 1.5, 1);
+                
+                // Draw melting effect
+                const currentHeight = anim.originalHeight * (1 - meltProgress * 0.7);
+                const meltOffset = meltProgress * 15;
+                
+                // Create melting gradient
+                const gradient = this.ctx.createLinearGradient(posX, posY, posX, posY + this.BLOCK_SIZE + meltOffset);
+                gradient.addColorStop(0, anim.color);
+                gradient.addColorStop(0.7, anim.color);
+                gradient.addColorStop(1, this.darkenColor(anim.color, 0.5));
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.globalAlpha = 1 - t;
+                
+                // Draw melting block
+                this.ctx.beginPath();
+                this.ctx.moveTo(posX, posY + this.BLOCK_SIZE - currentHeight);
+                this.ctx.lineTo(posX + this.BLOCK_SIZE, posY + this.BLOCK_SIZE - currentHeight);
+                this.ctx.lineTo(posX + this.BLOCK_SIZE - meltOffset/2, posY + this.BLOCK_SIZE + meltOffset);
+                this.ctx.lineTo(posX + meltOffset/2, posY + this.BLOCK_SIZE + meltOffset);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+            } else if (anim.type === 'bounce') {
+                const t = anim.progress / anim.duration;
+                
+                // Draw bouncing block
+                this.ctx.globalAlpha = 1 - t;
+                this.ctx.fillStyle = anim.color;
+                this.ctx.fillRect(posX, posY - anim.bounceHeight, this.BLOCK_SIZE, this.BLOCK_SIZE);
+                
+                // Draw shadow
+                this.ctx.globalAlpha = (1 - t) * 0.3;
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                const shadowScale = 1 + anim.bounceHeight / 20;
+                this.ctx.ellipse(
+                    posX + this.BLOCK_SIZE/2, posY + this.BLOCK_SIZE + 5,
+                    this.BLOCK_SIZE/2 * shadowScale, 5,
+                    0, 0, Math.PI * 2
+                );
+                this.ctx.fill();
+            }
+            
+            this.ctx.restore();
         });
     }
 }
