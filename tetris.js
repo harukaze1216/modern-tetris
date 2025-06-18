@@ -147,6 +147,11 @@ class ModernTetris {
         
         // Trigger random effect for each block
         this.triggerRandomBlockEffect(pieceBlocks);
+        
+        // Check for line clears after effects are applied
+        setTimeout(() => {
+            this.clearLines();
+        }, 100);
     }
     
     rotate(matrix) {
@@ -181,7 +186,6 @@ class ModernTetris {
         if (this.collides(this.currentPiece.matrix, this.currentPiece.pos)) {
             this.currentPiece.pos.y--;
             this.merge();
-            this.clearLines();
             this.generateNewPiece();
         }
     }
@@ -415,18 +419,22 @@ class ModernTetris {
         switch (effectType) {
             case 'explode':
                 this.createExplodeEffect(centerX, centerY, color);
+                this.applyExplodeEffect(block.x, block.y);
                 break;
             case 'melt':
                 this.createMeltEffect(block.x, block.y, color);
+                this.applyMeltEffect(block.x, block.y, block.color);
                 break;
             case 'bounce':
                 this.createBounceEffect(block.x, block.y, color);
+                this.applyBounceEffect(block.x, block.y, block.color);
                 break;
             case 'sparkle':
                 this.createSparkleEffect(centerX, centerY, color);
                 break;
             case 'implode':
                 this.createImplodeEffect(centerX, centerY, color);
+                this.applyImplodeEffect(block.x, block.y);
                 break;
         }
     }
@@ -629,6 +637,134 @@ class ModernTetris {
             
             this.ctx.restore();
         });
+    }
+    
+    // ============ FUNCTIONAL EFFECTS ============
+    
+    applyExplodeEffect(x, y) {
+        // Remove blocks in a 3x3 area around the explosion
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const newX = x + dx;
+                const newY = y + dy;
+                
+                if (newX >= 0 && newX < this.COLS && newY >= 0 && newY < this.ROWS) {
+                    if (this.board[newY][newX] !== 0) {
+                        // Create explosion particles for destroyed blocks
+                        const blockCenterX = (newX + 0.5) * this.BLOCK_SIZE;
+                        const blockCenterY = (newY + 0.5) * this.BLOCK_SIZE;
+                        this.createMiniExplosion(blockCenterX, blockCenterY, this.colors[this.board[newY][newX]]);
+                        
+                        this.board[newY][newX] = 0;
+                        this.score += 10; // Bonus points for destroyed blocks
+                    }
+                }
+            }
+        }
+    }
+    
+    applyMeltEffect(x, y, color) {
+        // Remove the original block
+        this.board[y][x] = 0;
+        
+        // Find the lowest possible position for the melted block
+        let meltY = y;
+        while (meltY + 1 < this.ROWS && this.board[meltY + 1][x] === 0) {
+            meltY++;
+        }
+        
+        // Place the melted block at the bottom
+        if (meltY !== y) {
+            this.board[meltY][x] = color;
+            
+            // Create melting trail effect
+            setTimeout(() => {
+                for (let trailY = y + 1; trailY < meltY; trailY++) {
+                    this.particles.push({
+                        x: (x + 0.5) * this.BLOCK_SIZE,
+                        y: (trailY + 0.5) * this.BLOCK_SIZE,
+                        vx: 0,
+                        vy: 1,
+                        size: 2,
+                        color: this.colors[color],
+                        life: 0.5,
+                        decay: 0.01,
+                        type: 'melt_trail'
+                    });
+                }
+            }, 200);
+        }
+    }
+    
+    applyBounceEffect(x, y, color) {
+        // Remove the original block
+        this.board[y][x] = 0;
+        
+        // Find a random nearby position to bounce to
+        const bounceDirections = [
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+            { dx: -1, dy: -1 }, { dx: 1, dy: -1 },
+            { dx: 0, dy: -1 }
+        ];
+        
+        const validMoves = bounceDirections.filter(dir => {
+            const newX = x + dir.dx;
+            const newY = y + dir.dy;
+            return newX >= 0 && newX < this.COLS && newY >= 0 && newY < this.ROWS && this.board[newY][newX] === 0;
+        });
+        
+        if (validMoves.length > 0) {
+            const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+            const newX = x + randomMove.dx;
+            const newY = y + randomMove.dy;
+            
+            // Place the bounced block after animation
+            setTimeout(() => {
+                this.board[newY][newX] = color;
+            }, 300);
+        } else {
+            // If no valid moves, just remove the block
+            this.score += 5; // Small bonus for removed block
+        }
+    }
+    
+    applyImplodeEffect(x, y) {
+        // Remove blocks in a cross pattern
+        const crossPattern = [
+            { dx: 0, dy: 0 }, // Center
+            { dx: -1, dy: 0 }, { dx: 1, dy: 0 }, // Left, Right
+            { dx: 0, dy: -1 }, { dx: 0, dy: 1 }  // Up, Down
+        ];
+        
+        crossPattern.forEach(pos => {
+            const newX = x + pos.dx;
+            const newY = y + pos.dy;
+            
+            if (newX >= 0 && newX < this.COLS && newY >= 0 && newY < this.ROWS) {
+                if (this.board[newY][newX] !== 0) {
+                    this.board[newY][newX] = 0;
+                    this.score += 8; // Bonus points
+                }
+            }
+        });
+    }
+    
+    createMiniExplosion(centerX, centerY, color) {
+        for (let i = 0; i < 6; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 2;
+            this.particles.push({
+                x: centerX,
+                y: centerY,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 2 + Math.random() * 2,
+                color: color,
+                life: 0.8,
+                decay: 0.025,
+                type: 'mini_explode'
+            });
+        }
     }
 }
 
